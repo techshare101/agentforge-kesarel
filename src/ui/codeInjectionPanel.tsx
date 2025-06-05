@@ -1,36 +1,57 @@
 import { useState, useEffect } from 'react';
-import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
-import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { getRecentCommands, CommandMemory } from '../memory/supabaseClient';
+// import { getRecentCommands, CommandMemory } from '../memory/supabaseClient';
 
-SyntaxHighlighter.registerLanguage('jsx', jsx);
-
-interface CodeInjectionPanelProps {
-  onInject?: (code: string) => void;
-  onEdit?: (code: string) => void;
+// Mock type until we restore Supabase
+interface CommandMemory {
+  command: string;
+  timestamp: number;
+  code?: string;
 }
 
-export default function CodeInjectionPanel({ onInject, onEdit }: CodeInjectionPanelProps) {
+
+interface InjectionTarget {
+  name: string;
+  path: string;
+}
+
+interface CodeInjectionPanelProps {
+  onInject?: (code: string, target: string) => void;
+  onEdit?: (code: string) => void;
+  onUndo?: () => void;
+  canUndo?: boolean;
+}
+
+export default function CodeInjectionPanel({ onInject, onEdit, onUndo, canUndo }: CodeInjectionPanelProps) {
   const [recentCode, setRecentCode] = useState<CommandMemory[]>([]);
   const [selectedCode, setSelectedCode] = useState<string>('');
   const [isEditing, setIsEditing] = useState(false);
   const [editableCode, setEditableCode] = useState('');
+  const [selectedTarget, setSelectedTarget] = useState<string>('App.tsx');
+  const [showPreview, setShowPreview] = useState(false);
+
+  const injectionTargets: InjectionTarget[] = [
+    { name: 'App.tsx', path: 'src/App.tsx' },
+    { name: 'Sidebar.tsx', path: 'src/components/Sidebar.tsx' },
+    { name: 'Header.tsx', path: 'src/components/Header.tsx' },
+    { name: 'Footer.tsx', path: 'src/components/Footer.tsx' }
+  ];
 
   useEffect(() => {
     loadRecentCode();
   }, []);
 
   async function loadRecentCode() {
-    const commands = await getRecentCommands(5);
-    setRecentCode(commands.filter(cmd => cmd.code));
+    // Temporarily use mock data until Supabase is restored
+    setRecentCode([
+      {
+        command: 'Example Component',
+        timestamp: Date.now(),
+        code: '<div className="p-4 bg-blue-500">\n  <h1>Hello World</h1>\n</div>'
+      }
+    ]);
   }
-
-  const handleInject = () => {
-    if (selectedCode && onInject) {
-      onInject(selectedCode);
-    }
-  };
 
   const handleEdit = () => {
     if (selectedCode) {
@@ -59,7 +80,24 @@ export default function CodeInjectionPanel({ onInject, onEdit }: CodeInjectionPa
   return (
     <div className="bg-[#1c2a40] rounded-lg p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-white">Code Injection Panel</h2>
+        <div className="flex items-center space-x-4">
+          <h2 className="text-xl font-semibold text-white">Code Injection Panel</h2>
+          <select
+            value={selectedTarget}
+            onChange={(e) => setSelectedTarget(e.target.value)}
+            className="bg-[#2e3e56] text-white px-3 py-1 rounded border border-gray-600"
+          >
+            {injectionTargets.map(target => (
+              <option key={target.path} value={target.name}>{target.name}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setShowPreview(!showPreview)}
+            className={`px-3 py-1 rounded ${showPreview ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}
+          >
+            {showPreview ? '📥 Hide Preview' : '👁️ Show Preview'}
+          </button>
+        </div>
         <div className="space-x-3">
           <button
             onClick={handleCopy}
@@ -79,7 +117,7 @@ export default function CodeInjectionPanel({ onInject, onEdit }: CodeInjectionPa
             ✏️ Edit
           </button>
           <button
-            onClick={handleInject}
+            onClick={() => onInject?.(selectedCode, selectedTarget)}
             disabled={!selectedCode}
             className={`px-3 py-1 rounded ${
               selectedCode
@@ -91,6 +129,36 @@ export default function CodeInjectionPanel({ onInject, onEdit }: CodeInjectionPa
           </button>
         </div>
       </div>
+
+      {/* Live Preview */}
+      {showPreview && (
+        <div className="bg-[#2e3e56] rounded-lg p-4 mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-sm font-medium text-gray-400">Live Preview: {selectedTarget}</h3>
+            {canUndo && (
+              <button
+                onClick={onUndo}
+                className="px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+              >
+                ⏪ Undo Last Injection
+              </button>
+            )}
+          </div>
+          <div className="bg-[#1a2234] rounded p-4 overflow-x-auto">
+            <SyntaxHighlighter
+              language="jsx"
+              style={atomDark}
+              customStyle={{
+                margin: 0,
+                padding: 0,
+                background: 'transparent'
+              }}
+            >
+              {selectedCode || '// No changes to preview'}
+            </SyntaxHighlighter>
+          </div>
+        </div>
+      )}
 
       {/* Code Editor/Viewer */}
       <div className="bg-[#2e3e56] rounded-lg p-4">

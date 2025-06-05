@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { loadVoiceParser, startVoiceParser, stopVoiceParser } from '../core/voiceParser';
-import { executeTaskFromCommand } from '../core/taskRouter';
+import { routeCommand } from '../core/taskRouter';
 import CodePreviewPanel from './components/CodePreviewPanel';
 import CodeInjectionPanel from './codeInjectionPanel';
-import { logCommand, getRecentCommands } from '../memory/supabaseClient';
+// import { logCommand, getRecentCommands } from '../memory/supabaseClient';
 
 interface CommandLogEntry {
   command: string;
@@ -18,13 +18,17 @@ const InterfaceLayout = () => {
   const [log, setLog] = useState<CommandLogEntry[]>([]);
   const [currentResult, setCurrentResult] = useState<string>('');
   const [currentCode, setCurrentCode] = useState<string>('');
+  const [lastInjection, setLastInjection] = useState<{code: string, target: string} | null>(null);
   const [deploymentStatus, setDeploymentStatus] = useState<string>('');
+  const [undoEnabled, setUndoEnabled] = useState(false);
+  const [devSyncEnabled, setDevSyncEnabled] = useState(false);
+  const [showMemoryTimeline, setShowMemoryTimeline] = useState(false);
 
   useEffect(() => {
     // Initialize voice parser with command handler
     loadVoiceParser(async (command) => {
       setTranscript(command);
-      const taskResult = await executeTaskFromCommand(command);
+      const taskResult = routeCommand(command);
       setCurrentResult(taskResult.message);
       
       // Handle code preview if present
@@ -35,13 +39,19 @@ const InterfaceLayout = () => {
         setCurrentCode(code);
 
         // Log command with code to Supabase
-        await logCommand(command, taskResult.message, code);
+        // await logCommand(command, taskResult.message, code);
       } else if (taskResult.data?.type === 'deployment') {
         setDeploymentStatus(taskResult.data.status);
-        await logCommand(command, taskResult.message);
+      } else if (taskResult.data?.type === 'memory' && taskResult.data.action === 'view_timeline') {
+        setShowMemoryTimeline(true);
+      } else if (taskResult.data?.type === 'feature') {
+        if (taskResult.data.action === 'enable_undo') {
+          setUndoEnabled(true);
+        } else if (taskResult.data.action === 'enable_dev_sync') {
+          setDevSyncEnabled(true);
+        }
       } else {
         setCurrentCode('');
-        await logCommand(command, taskResult.message);
       }
       
       // Add to command log
@@ -54,18 +64,18 @@ const InterfaceLayout = () => {
     });
 
     // Load initial command history
-    loadCommandHistory();
+    // loadCommandHistory();
   }, []);
 
-  const loadCommandHistory = async () => {
-    const history = await getRecentCommands(5);
-    setLog(history.map(h => ({
-      command: h.command,
-      timestamp: new Date(h.timestamp).getTime(),
-      result: h.result,
-      code: h.code
-    })));
-  };
+  // const loadCommandHistory = async () => {
+  //   const history = await getRecentCommands(5);
+  //   setLog(history.map(h => ({
+  //     command: h.command,
+  //     timestamp: new Date(h.timestamp).getTime(),
+  //     result: h.result,
+  //     code: h.code
+  //   })));
+  // };
 
   const handleVoiceStart = () => {
     setIsListening(true);
@@ -79,14 +89,21 @@ const InterfaceLayout = () => {
     setTranscript('Voice input stopped.');
   };
 
-  const handleCodeInject = async (code: string) => {
+  const handleInject = (code: string, target: string) => {
     setCurrentCode(code);
-    await logCommand('inject_code', 'Code injected successfully', code);
+    setLastInjection({ code, target });
+  };
+
+  const handleUndo = () => {
+    if (lastInjection) {
+      setCurrentCode('');
+      setLastInjection(null);
+    }
   };
 
   const handleCodeEdit = async (code: string) => {
     setCurrentCode(code);
-    await logCommand('edit_code', 'Code updated successfully', code);
+    // await logCommand('edit_code', 'Code updated successfully', code);
   };
 
   return (
@@ -97,6 +114,29 @@ const InterfaceLayout = () => {
       </header>
 
       <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Developer Features */}
+        {(undoEnabled || devSyncEnabled || showMemoryTimeline) && (
+          <div className="lg:col-span-2 bg-[#1c2a40] rounded-lg p-4 mb-4">
+            <div className="flex items-center space-x-4">
+              {undoEnabled && (
+                <span className="px-3 py-1 bg-blue-600 text-white rounded-full text-sm">
+                  ⏪ Undo Enabled
+                </span>
+              )}
+              {devSyncEnabled && (
+                <span className="px-3 py-1 bg-green-600 text-white rounded-full text-sm">
+                  🔄 Dev Sync Active
+                </span>
+              )}
+              {showMemoryTimeline && (
+                <span className="px-3 py-1 bg-purple-600 text-white rounded-full text-sm">
+                  🕒 Memory Timeline
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Left Column - Voice Commands */}
         <div className="space-y-6">
           <div className="bg-[#1c2a40] rounded-lg p-6">
@@ -183,9 +223,11 @@ const InterfaceLayout = () => {
 
         {/* Right Column - Code Injection */}
         <div>
-          <CodeInjectionPanel
-            onInject={handleCodeInject}
+          <CodeInjectionPanel 
+            onInject={handleInject} 
             onEdit={handleCodeEdit}
+            onUndo={handleUndo}
+            canUndo={lastInjection !== null}
           />
         </div>
       </main>

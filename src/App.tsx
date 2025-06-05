@@ -1,7 +1,12 @@
 import InterfaceLayout from './ui/interfaceLayout';
+import { ErrorBoundary } from './ui/components/ErrorBoundary';
 
 function App() {
-  return <InterfaceLayout />;
+  return (
+    <ErrorBoundary>
+      <InterfaceLayout />
+    </ErrorBoundary>
+  );
 }
 
 export default App;
